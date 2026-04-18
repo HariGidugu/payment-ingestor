@@ -35,6 +35,14 @@ spring:
         batch.size: 65536
         # Optimization: Snappy compression reduces network bandwidth usage without high CPU overhead
         compression.type: snappy
+        # Reliability: Maximum time to wait for a successful response including all retries
+        delivery.timeout.ms: 120000
+        # Network: Time the producer will wait for a response from the broker for a single request
+        request.timeout.ms: 30000
+        # Performance: Total memory (32MB) allocated to buffer records waiting to be sent to the broker
+        buffer.memory: 33554432
+        # Reliability: Time to wait before retrying a failed request to the broker
+        retry.backoff.ms: 1000
 
 management:
   endpoints:
