@@ -5,6 +5,7 @@ import com.bank.payment.dto.PaymentRequest;
 import com.bank.payment.entity.Account;
 import com.bank.payment.exception.AccountInactiveException;
 import com.bank.payment.exception.AccountNotFoundException;
+import com.bank.payment.exception.AccountSuspendedException;
 import com.bank.payment.repository.AccountRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +14,8 @@ import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.UUID;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -28,25 +30,36 @@ public class PaymentService {
     private static final String ACTIVE_STATUS = "ACTIVE";
 
     @Transactional(readOnly = true)
-    public String processPayment(PaymentRequest request) {
+    public List<String> processPayments(List<PaymentRequest> requests) {
+        return requests.stream()
+                .map(this::processPayment)
+                .collect(Collectors.toList());
+    }
+
+    private String processPayment(PaymentRequest request) {
         // Validate debit account
         Account debitAccount = accountRepository.findById(request.getDebitAccountId())
-                .orElseThrow(() -> new AccountNotFoundException("Debit account not found: " + request.getDebitAccountId()));
-
-        if (!ACTIVE_STATUS.equals(debitAccount.getStatus())) {
+                .orElseThrow(
+                        () -> new AccountNotFoundException("Debit account not found: " + request.getDebitAccountId()));
+        if ("SUSPENDED".equals(debitAccount.getStatus())) {
+            throw new AccountSuspendedException("Account is suspended: " + request.getDebitAccountId());
+        } else if (!ACTIVE_STATUS.equals(debitAccount.getStatus())) {
             throw new AccountInactiveException("Debit account is not ACTIVE: " + request.getDebitAccountId());
         }
 
         // Validate credit account
         Account creditAccount = accountRepository.findById(request.getCreditAccountId())
-                .orElseThrow(() -> new AccountNotFoundException("Credit account not found: " + request.getCreditAccountId()));
+                .orElseThrow(() -> new AccountNotFoundException(
+                        "Credit account not found: " + request.getCreditAccountId()));
 
-        if (!ACTIVE_STATUS.equals(creditAccount.getStatus())) {
+        if ("SUSPENDED".equals(creditAccount.getStatus())) {
+            throw new AccountSuspendedException("Account is suspended: " + request.getCreditAccountId());
+        } else if (!ACTIVE_STATUS.equals(creditAccount.getStatus())) {
             throw new AccountInactiveException("Credit account is not ACTIVE: " + request.getCreditAccountId());
         }
 
         // Both accounts are ACTIVE. Generate Payment ID
-        String paymentId = UUID.randomUUID().toString();
+        String paymentId = request.getPaymentId();
 
         // Create Payment Event
         PaymentEvent event = PaymentEvent.builder()
@@ -63,7 +76,7 @@ public class PaymentService {
 
         future.whenComplete((result, ex) -> {
             if (ex == null) {
-                log.info("Sent payment event with id=[{}] to partition=[{}] with offset=[{}]", 
+                log.info("Sent payment event with id=[{}] to partition=[{}] with offset=[{}]",
                         paymentId, result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
             } else {
                 log.error("Unable to send payment event with id=[{}] due to: {}", paymentId, ex.getMessage());

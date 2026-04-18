@@ -12,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
@@ -22,21 +24,21 @@ public class PaymentController {
 
     @Operation(summary = "Accept a payment request", description = "Validates accounts and publishes a valid payment event to Kafka")
     @PostMapping("/payments")
-    public ResponseEntity<PaymentResponse> submitPayment(@Valid @RequestBody PaymentRequest request) {
-        String paymentId = paymentService.processPayment(request);
-        
+    public ResponseEntity<PaymentResponse> submitPayment(@Valid @RequestBody List<PaymentRequest> requests) {
+        List<String> paymentIds = paymentService.processPayments(requests);
+
         PaymentResponse response = PaymentResponse.builder()
-                .paymentId(paymentId)
+                .paymentIds(paymentIds)
                 .status("ACCEPTED")
-                .message("Payment submitted successfully")
+                .message("Payments submitted successfully")
                 .build();
-                
+
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
     @Operation(summary = "Fetch account details", description = "Retrieves account information by account ID")
-    @GetMapping("/accounts/{accountId}")
-    public ResponseEntity<Account> getAccount(@PathVariable String accountId) {
+    @GetMapping("/accounts")
+    public ResponseEntity<Account> getAccount(@RequestParam(name = "accountId") String accountId) {
         Account account = paymentService.getAccountDetails(accountId);
         return ResponseEntity.ok(account);
     }
